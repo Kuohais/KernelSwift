@@ -1,0 +1,8 @@
+# Everything below is produced by a run, not checked in.
+results/
+baselines/
+.triton-cache/
+ks-ascend-results.tar.gz
+
+__pycache__/
+*.pyc
