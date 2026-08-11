@@ -1,0 +1,9 @@
+# This repository is authored on Windows and only ever run on Linux, so line
+# endings are pinned rather than left to core.autocrlf. A run_all.sh that
+# arrives with CRLF fails as `\r: command not found`, which is a confusing way
+# to lose an hour on a machine you can only reach by hand.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
