@@ -28,6 +28,8 @@ STAGES = (
      "whether Triton works here, what a launch costs, which constructs break"),
     (3, "baselines", "stages/s3_baselines.py", 5400,
      "reference latency and input layout for all ten operators"),
+    (5, "launch", "stages/s5_launch.py", 1800,
+     "what a launch costs and whether consecutive launches overlap"),
 )
 
 
@@ -58,60 +60,64 @@ def main():
 
     report_path = os.path.join(RESULTS, "REPORT.txt")
 
-    def flush_report(lines):
-        """Rewrite the report after every stage.
+    def flush_report(header):
+        """Rebuild the report from whatever stage logs exist on disk.
 
-        Stage 4 can run for an hour and the machine is not mine to babysit, so
-        the report has to be complete-as-of-now at all times: if it is cut
-        short, whatever finished is still on disk and still worth sending.
+        Assembling from the logs rather than from this run's output is what
+        makes `--stage 5` safe: re-running one stage refreshes its log and
+        leaves the others in place, so the report stays complete instead of
+        shrinking to just the stage that was re-run. It also means the report is
+        current after every stage, so interrupting a long run still leaves a
+        file worth sending.
         """
+        parts = [header]
+        for num, name, _script, _timeout, blurb in STAGES:
+            log_path = os.path.join(RESULTS, "stage{}_{}.log".format(num, name))
+            if not os.path.exists(log_path):
+                continue
+            parts.append("\n{0}\n### stage {1}: {2} -- {3}\n{0}".format(
+                "=" * 78, num, name, blurb))
+            with open(log_path, encoding="utf-8", errors="replace") as fh:
+                parts.append(fh.read().rstrip())
         with open(report_path, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write("\n".join(lines))
+            fh.write("\n".join(parts) + "\n")
 
-    report = []
     started = time.time()
-    header = "KernelSwift Ascend survey, started {}".format(
+    header = "KernelSwift Ascend survey, written {}".format(
         time.strftime("%Y-%m-%d %H:%M:%S"))
     print(header)
-    report.append(header)
 
     for num, name, script, timeout, blurb in STAGES:
         if num not in wanted:
             continue
-        banner = "\n{0}\n### stage {1}/{2}: {3} -- {4}\n{0}".format(
-            "=" * 78, num, len(STAGES), name, blurb)
+        banner = "\n{0}\n### stage {1}: {2} -- {3}\n{0}".format(
+            "=" * 78, num, name, blurb)
         print(banner)
-        report.append(banner)
         sys.stdout.flush()
 
         log_path = os.path.join(RESULTS, "stage{}_{}.log".format(num, name))
         t0 = time.time()
         try:
-            code, text = stream([sys.executable, script], log_path)
+            code, _text = stream([sys.executable, script], log_path)
         except Exception as exc:
-            code, text = 1, "runner failed to start stage: {}\n".format(exc)
-            print(text)
+            code = 1
+            print("runner failed to start stage: {}".format(exc))
         elapsed = "\n[stage {} finished in {:.0f} s, exit {}]".format(
             num, time.time() - t0, code)
         print(elapsed)
-        report.append(text)
-        report.append(elapsed)
-        flush_report(report)
+        with open(log_path, "a", encoding="utf-8", newline="\n") as fh:
+            fh.write(elapsed + "\n")
+        flush_report(header)
         sys.stdout.flush()
 
         if num == 1 and code != 0:
-            stop = ("\nStage 1 failed, so torch or the accelerator is not usable "
-                    "on this machine. Stopping: later stages would only produce "
-                    "noise. Send back this report as it is.")
-            print(stop)
-            report.append(stop)
-            flush_report(report)
+            print("\nStage 1 failed, so torch or the accelerator is not usable "
+                  "on this machine. Stopping: later stages would only produce "
+                  "noise. Send back this report as it is.")
             break
 
-    footer = "\n\nTotal {:.0f} s".format(time.time() - started)
-    print(footer)
-    report.append(footer)
-    flush_report(report)
+    print("\n\nTotal {:.0f} s".format(time.time() - started))
+    flush_report(header)
 
     archive = os.path.join(ROOT, "ks-ascend-results.tar.gz")
     subprocess.run(["tar", "-czf", archive, "-C", ROOT, "results"], cwd=ROOT)
