@@ -43,7 +43,16 @@ CASES = (
 
 
 def _kernels():
-    """Built lazily so a case can report an import failure instead of crashing."""
+    """Built lazily so a case can report an import failure instead of crashing.
+
+    The `global` matters. Triton does not compile the Python function object it
+    was handed; it re-parses the source and resolves every name -- including the
+    `tl` in a `BLOCK: tl.constexpr` annotation -- against the defining module's
+    globals. A plain `import triton.language as tl` here would bind `tl` as a
+    local of this function, leaving it absent from those globals, and every
+    kernel below would fail to compile with NameError('tl is not defined').
+    """
+    global triton, tl
     import triton
     import triton.language as tl
 
